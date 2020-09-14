@@ -71,7 +71,6 @@ def encode_pieces(sp_model, text, return_unicode=True, sample=False):
   for piece in new_pieces:
       annot_str = piece
       orig_str = piece
-      print(orig_str)
       if orig_str[0] == SPIECE_UNDERLINE:
           orig_str = orig_str[1:]
       subtoken = SubToken(annot_str, orig_str, is_good=True)
