@@ -23,6 +23,13 @@ import collections
 from absl import logging
 from bert import tokenization as bert_tokenization
 import data
+import six
+import tensorflow as tf
+from six.moves import range
+import sentencepiece as spm
+
+SPIECE_UNDERLINE = "▁"
+
 
 SubToken = collections.namedtuple(
     "SubToken",
@@ -37,6 +44,40 @@ SubToken = collections.namedtuple(
         # purposes.)
         "is_good"
     ])
+
+
+def encode_pieces(sp_model, text, return_unicode=True, sample=False):
+  """Nondestructively turn sentences into word pieces."""
+
+  if not sample:
+    pieces = sp_model.EncodeAsPieces(text)
+  else:
+    pieces = sp_model.SampleEncodeAsPieces(text, 64, 0.1)
+  new_pieces = []
+  for piece in pieces:
+    if len(piece) > 1 and piece[-1] == "," and piece[-2].isdigit():
+      cur_pieces = sp_model.EncodeAsPieces(piece[:-1].replace(SPIECE_UNDERLINE, ''))
+      if piece[0] != SPIECE_UNDERLINE and cur_pieces[0][0] == SPIECE_UNDERLINE:
+        if len(cur_pieces[0]) == 1:
+          cur_pieces = cur_pieces[1:]
+        else:
+          cur_pieces[0] = cur_pieces[0][1:]
+      cur_pieces.append(piece[-1])
+      new_pieces.extend(cur_pieces)
+    else:
+      new_pieces.append(piece)
+
+  output_tokens = []
+  for piece in new_pieces:
+      annot_str = piece
+      orig_str = piece
+      print(orig_str)
+      if orig_str[0] == SPIECE_UNDERLINE:
+          orig_str = orig_str[1:]
+      subtoken = SubToken(annot_str, orig_str, is_good=True)
+      output_tokens.append(subtoken)
+
+  return output_tokens
 
 
 def whitespace_tokenize(subtokens):
@@ -90,32 +131,47 @@ def split_subtokens_on(subtokens, should_isolate_func, are_good):
 class NonDestructiveFullTokenizer(object):
   """Runs end-to-end tokenziation."""
 
-  def __init__(self, vocab_file):
-    self.vocab = bert_tokenization.load_vocab(vocab_file)
+  def __init__(self, vocab_file, spm_model_file=None):
+    self.vocab = None
+    self.sp_model = None
+    if spm_model_file:
+      self.sp_model = spm.SentencePieceProcessor()
+      tf.logging.info("loading sentence piece model")
+      # Handle cases where SP can't load the file, but gfile can.
+      sp_model_ = tf.gfile.GFile(spm_model_file, "rb").read()
+      self.sp_model.LoadFromSerializedProto(sp_model_)
+      # Note(mingdachen): For the purpose of consisent API, we are
+      # generating a vocabulary for the sentence piece tokenizer.
+      self.vocab = {self.sp_model.IdToPiece(i): i for i
+                    in range(self.sp_model.GetPieceSize())}
+    else:
+      self.vocab = bert_tokenization.load_vocab(vocab_file)
+      self.basic_tokenizer = NonDestructiveBasicTokenizer(vocab=self.vocab)
+      self.wordpiece_tokenizer = NonDestructiveWordpieceTokenizer(vocab=self.vocab)
     self.inv_vocab = {v: k for k, v in self.vocab.items()}
-    self.basic_tokenizer = NonDestructiveBasicTokenizer(vocab=self.vocab)
-    self.wordpiece_tokenizer = NonDestructiveWordpieceTokenizer(
-        vocab=self.vocab)
 
   def tokenize(self, text):
     """Tokenizes a piece of `text` and returns a list of `SubToken`s."""
-    split_tokens = []  # list of `SubToken`s.
-    for token, orig_token, is_good_token in self.basic_tokenizer.tokenize(text):
-      if not is_good_token:
-        split_tokens.append(SubToken(token, orig_token, is_good=False))
-        continue
+    if self.sp_model:
+      split_tokens = encode_pieces(self.sp_model, text, return_unicode=False)
+    else:
+      split_tokens = []  # list of `SubToken`s.
+      for token, orig_token, is_good_token in self.basic_tokenizer.tokenize(text):
+        if not is_good_token:
+          split_tokens.append(SubToken(token, orig_token, is_good=False))
+          continue
 
-      # Preserve special tokens such as '[Q]' and '[SEP]'.
-      if bert_tokenization.preserve_token(token, self.vocab):
-        split_tokens.append(SubToken(token, orig_token, is_good=True))
-        continue
+        # Preserve special tokens such as '[Q]' and '[SEP]'.
+        if bert_tokenization.preserve_token(token, self.vocab):
+          split_tokens.append(SubToken(token, orig_token, is_good=True))
+          continue
 
-      # For everything else, send the text-like tokens that have survived
-      # whitespace and puncutation splitting through a wordpiece tokenizer.
-      for sub_token in self.wordpiece_tokenizer.tokenize(
-          [SubToken(token, orig_token, is_good_token)]):
-        # `sub_token` has type `SubToken`.
-        split_tokens.append(sub_token)
+        # For everything else, send the text-like tokens that have survived
+        # whitespace and puncutation splitting through a wordpiece tokenizer.
+        for sub_token in self.wordpiece_tokenizer.tokenize(
+            [SubToken(token, orig_token, is_good_token)]):
+          # `sub_token` has type `SubToken`.
+          split_tokens.append(sub_token)
 
     return split_tokens
 
