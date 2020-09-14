@@ -59,7 +59,7 @@ import json
 import os
 
 from absl import logging
-from bert import modeling as bert_modeling
+from albert import modeling as albert_modeling
 import tensorflow.compat.v1 as tf
 import postproc
 import preproc
@@ -72,7 +72,7 @@ flags = tf.flags
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string(
-    "bert_config_file", None,
+    "albert_config_file", None,
     "The config json file corresponding to the pre-trained BERT model. "
     "This specifies the model architecture.")
 
@@ -222,7 +222,7 @@ flags.DEFINE_integer(
     "Only used if `use_tpu` is True. Total number of TPU cores to use.")
 
 
-def validate_flags_or_throw(bert_config):
+def validate_flags_or_throw(albert_config):
   """Validate the input FLAGS or throw an exception."""
   if not FLAGS.do_train and not FLAGS.do_predict:
     raise ValueError("At least one of `{do_train,do_predict}` must be True.")
@@ -243,7 +243,7 @@ def validate_flags_or_throw(bert_config):
       raise ValueError("If `do_predict` is True, "
                        "then `output_prediction_file` must be specified.")
 
-  if FLAGS.max_seq_length > bert_config.max_position_embeddings:
+  if FLAGS.max_seq_length > albert_config.max_position_embeddings:
     raise ValueError(
         "Cannot use sequence length %d because the BERT model "
         "was only trained up to sequence length %d" %
@@ -257,8 +257,8 @@ def validate_flags_or_throw(bert_config):
 
 def main(_):
   logging.set_verbosity(logging.INFO)
-  bert_config = bert_modeling.BertConfig.from_json_file(FLAGS.bert_config_file)
-  validate_flags_or_throw(bert_config)
+  albert_config = albert_modeling.AlbertConfig.from_json_file(FLAGS.albert_config_file)
+  validate_flags_or_throw(albert_config)
   tf.gfile.MakeDirs(FLAGS.output_dir)
 
   tpu_cluster_resolver = None
@@ -292,7 +292,7 @@ def main(_):
     num_warmup_steps = int(num_train_steps * FLAGS.warmup_proportion)
 
   model_fn = tydi_modeling.model_fn_builder(
-      bert_config=bert_config,
+      albert_config=albert_config,
       init_checkpoint=FLAGS.init_checkpoint,
       learning_rate=FLAGS.learning_rate,
       num_train_steps=num_train_steps,
@@ -487,6 +487,6 @@ def read_candidates(input_pattern):
 
 if __name__ == "__main__":
   flags.mark_flag_as_required("vocab_file")
-  flags.mark_flag_as_required("bert_config_file")
+  flags.mark_flag_as_required("albert_config_file")
   flags.mark_flag_as_required("output_dir")
   tf.app.run()

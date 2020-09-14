@@ -20,19 +20,19 @@ This module is a fairly thin wrapper over the BERT reference implementation.
 import collections
 
 from absl import logging
-from bert import modeling as bert_modeling
-from bert import optimization as bert_optimization
+from albert import modeling as albert_modeling
+from albert import optimization as albert_optimization
 import tensorflow.compat.v1 as tf
 import data
 
 import tensorflow.contrib as tf_contrib
 
 
-def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
+def create_model(albert_config, is_training, input_ids, input_mask, segment_ids,
                  use_one_hot_embeddings):
   """Creates a classification model."""
-  model = bert_modeling.BertModel(
-      config=bert_config,
+  model = albert_modeling.AlbertModel(
+      config=albert_config,
       is_training=is_training,
       input_ids=input_ids,
       input_mask=input_mask,
@@ -42,7 +42,7 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
   # Get the logits for the start and end predictions.
   final_hidden = model.get_sequence_output()
 
-  final_hidden_shape = bert_modeling.get_shape_list(
+  final_hidden_shape = albert_modeling.get_shape_list(
       final_hidden, expected_rank=3)
   batch_size = final_hidden_shape[0]
   seq_length = final_hidden_shape[1]
@@ -88,7 +88,7 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
   return start_logits, end_logits, answer_type_logits
 
 
-def model_fn_builder(bert_config, init_checkpoint, learning_rate,
+def model_fn_builder(albert_config, init_checkpoint, learning_rate,
                      num_train_steps, num_warmup_steps, use_tpu,
                      use_one_hot_embeddings):
   """Returns `model_fn` closure for TPUEstimator."""
@@ -108,7 +108,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
     is_training = (mode == tf.estimator.ModeKeys.TRAIN)
 
     (start_logits, end_logits, answer_type_logits) = create_model(
-        bert_config=bert_config,
+        albert_config=albert_config,
         is_training=is_training,
         input_ids=input_ids,
         input_mask=input_mask,
@@ -121,7 +121,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
     scaffold_fn = None
     if init_checkpoint:
       (assignment_map, initialized_variable_names
-      ) = bert_modeling.get_assignment_map_from_checkpoint(
+      ) = albert_modeling.get_assignment_map_from_checkpoint(
           tvars, init_checkpoint)
       if use_tpu:
 
@@ -143,7 +143,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
 
     output_spec = None
     if mode == tf.estimator.ModeKeys.TRAIN:
-      seq_length = bert_modeling.get_shape_list(input_ids)[1]
+      seq_length = albert_modeling.get_shape_list(input_ids)[1]
 
       # Computes the loss for positions.
       def compute_loss(logits, positions):
@@ -174,9 +174,9 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
 
       total_loss = (start_loss + end_loss + answer_type_loss) / 3.0
 
-      train_op = bert_optimization.create_optimizer(total_loss, learning_rate,
-                                                    num_train_steps,
-                                                    num_warmup_steps, use_tpu)
+      train_op = albert_optimization.create_optimizer(total_loss, learning_rate,
+                                                      num_train_steps,
+                                                      num_warmup_steps, use_tpu)
 
       output_spec = tf_contrib.tpu.TPUEstimatorSpec(
           mode=mode,
